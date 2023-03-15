@@ -1,4 +1,6 @@
+
 import os
+import re
 
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node
@@ -13,6 +15,8 @@ from launch.substitutions import (Command, EnvironmentVariable, FindExecutable,
                                 LaunchConfiguration, LocalSubstitution,
                                 PythonExpression, PathJoinSubstitution)
 
+from launch.event_handlers import (OnExecutionComplete, OnProcessExit,
+                                OnProcessIO, OnProcessStart, OnShutdown)
 def generate_launch_description():
     namespace = LaunchConfiguration('namespace')
 
@@ -37,6 +41,7 @@ def generate_launch_description():
                 'namespace': namespace
                 }.items()
             )
+
     #
     # robot_state_publisher_node
     #
@@ -80,10 +85,33 @@ def generate_launch_description():
                 }.items()
             )
 
+    # nesfr7_XX
+    if re.search("nesfr7_[0-9]+$", hostname):
+        return LaunchDescription([
+            namespace_launch_arg,
+            robot_state_publisher_node,
+            nesfr_vr_launch,
+        ])
 
-    return LaunchDescription([
-        namespace_launch_arg,
-        robot_state_publisher_node,
-        nesfr7_arm_launch,
-        nesfr_vr_launch,
-    ])
+    elif re.search("nesfr7_arm_[0-9]+$", hostname):
+        return LaunchDescription([
+            namespace_launch_arg,
+            robot_state_publisher_node,
+            nesfr7_arm_launch,
+            nesfr_vr_launch,
+        ])
+    else:
+        #
+        # references:
+        #  - https://github.com/ros2/launch/blob/foxy/launch/doc/source/architecture.rst#id49
+        #  - https://docs.ros.org/en/galactic/Tutorials/Intermediate/Launch/Using-Event-Handlers.html
+        #
+        return LaunchDescription([
+            RegisterEventHandler(
+                OnShutdown(
+                    on_shutdown=[LogInfo(
+                        msg=['This system({}) is unsupported by [nesfr7_vr_bringup]! Check your system or hostname'.format(hostname)]
+                    )]
+            )
+        ),
+        ])
