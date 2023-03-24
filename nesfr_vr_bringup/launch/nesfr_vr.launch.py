@@ -45,60 +45,60 @@ def generate_launch_description():
                 }.items()
             )
 
-    #
-    # robot_state_publisher_node
-    #
-    nesfr_arm_params = PathJoinSubstitution(
-        [FindPackageShare("nesfr_arm_description"), "config", "nesfr7_arm.yaml"]
-    )
-
-    robot_description_content = Command(
-        [
-            PathJoinSubstitution([FindExecutable(name="xacro")]),
-            " ",
-            PathJoinSubstitution([FindPackageShare("nesfr_arm_description"), "urdf", "nesfr_arm.urdf.xacro"]),
-            " ",
-            "nesfr_arm_params:=",
-            nesfr_arm_params,
-            " ",
-            "prefix:=",
-            hostname + '/',
-            " ",
-        ]
-    )
-    robot_description = {"robot_description": robot_description_content}
-    robot_state_publisher_node = Node(
-        package="robot_state_publisher",
-        executable="robot_state_publisher",
-        namespace=namespace,
-        output="both",
-        parameters=[robot_description],
-    )
-
-    #
-    # nesfr_arm_node
-    #
-    robot_config_file = LaunchConfiguration('robot_config_file', default=[namespace, '.yaml'])
-    nesfr7_arm_params = PathJoinSubstitution(
-            [FindPackageShare("nesfr_arm_bringup"), "config", robot_config_file]
-            )
-
-    #
-    # references
-    #  - https://answers.ros.org/question/311471/selecting-log-level-in-ros2-launch-file/
-    #  - https://docs.ros.org/en/humble/Tutorials/Demos/Logging-and-logger-configuration.html
-    #
-    nesfr7_arm_only_node = Node(
-        package='nesfr_arm_only_node_py',
-        executable='nesfr_arm_only_node',
-        namespace=namespace,
-        name='nesfr7_arm_only_node',
-        parameters=[nesfr7_arm_params],
-        #parameters=[{"param0": 1, "param1": 2}],
-        arguments=['--ros-args', '--log-level', [namespace, '.nesfr7_arm_only_node:=info'],],
-        output='both',
-    )
-
+#    #
+#    # robot_state_publisher_node
+#    #
+#    nesfr_arm_params = PathJoinSubstitution(
+#        [FindPackageShare("nesfr_arm_description"), "config", "nesfr7_arm.yaml"]
+#    )
+#
+#    robot_description_content = Command(
+#        [
+#            PathJoinSubstitution([FindExecutable(name="xacro")]),
+#            " ",
+#            PathJoinSubstitution([FindPackageShare("nesfr_arm_description"), "urdf", "nesfr_arm.urdf.xacro"]),
+#            " ",
+#            "nesfr_arm_params:=",
+#            nesfr_arm_params,
+#            " ",
+#            "prefix:=",
+#            hostname + '/',
+#            " ",
+#        ]
+#    )
+#    robot_description = {"robot_description": robot_description_content}
+#    robot_state_publisher_node = Node(
+#        package="robot_state_publisher",
+#        executable="robot_state_publisher",
+#        namespace=namespace,
+#        output="both",
+#        parameters=[robot_description],
+#    )
+#
+#    #
+#    # nesfr_arm_node
+#    #
+#    robot_config_file = LaunchConfiguration('robot_config_file', default=[namespace, '.yaml'])
+#    nesfr7_arm_params = PathJoinSubstitution(
+#            [FindPackageShare("nesfr_arm_bringup"), "config", robot_config_file]
+#            )
+#
+#    #
+#    # references
+#    #  - https://answers.ros.org/question/311471/selecting-log-level-in-ros2-launch-file/
+#    #  - https://docs.ros.org/en/humble/Tutorials/Demos/Logging-and-logger-configuration.html
+#    #
+#    nesfr7_arm_only_node = Node(
+#        package='nesfr_arm_only_node_py',
+#        executable='nesfr_arm_only_node',
+#        namespace=namespace,
+#        name='nesfr7_arm_only_node',
+#        parameters=[nesfr7_arm_params],
+#        #parameters=[{"param0": 1, "param1": 2}],
+#        arguments=['--ros-args', '--log-level', [namespace, '.nesfr7_arm_only_node:=info'],],
+#        output='both',
+#    )
+#
 #    nesfr7_arm_launch = IncludeLaunchDescription(
 #            PythonLaunchDescriptionSource([
 #                PathJoinSubstitution([
@@ -110,8 +110,34 @@ def generate_launch_description():
 #                'namespace': namespace
 #                }.items()
 #            )
-#
 
+    nesfr7_arm_common_launch = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([
+                PathJoinSubstitution([
+                    FindPackageShare('nesfr_arm_bringup'), 'launch',
+                    'nesfr7_arm_common.launch.py'
+                    ])
+                ]),
+            launch_arguments={
+                'namespace': namespace
+                }.items()
+            )
+
+    nesfr7_arm_only_common_launch = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([
+                PathJoinSubstitution([
+                    FindPackageShare('nesfr_arm_bringup'), 'launch',
+                    'nesfr7_arm_only_common.launch.py'
+                    ])
+                ]),
+            launch_arguments={
+                'namespace': namespace
+                }.items()
+            )
+
+    #
+    # nesfr4
+    #
     nesfr4_params = PathJoinSubstitution([
             FindPackageShare('nesfr4_node'),
             'config', 'nesfr4-params.yaml'])
@@ -128,13 +154,17 @@ def generate_launch_description():
             namespace_launch_arg,
             nesfr_vr_launch,
         ])
+    elif re.search("nesfr7_one_[0-9]+$", hostname):
+        return LaunchDescription([
+            namespace_launch_arg,
+            nesfr7_arm_common_launch,
+            nesfr_vr_launch,
+        ])
 
     elif re.search("nesfr7_arm_[0-9]+$", hostname):
         return LaunchDescription([
             namespace_launch_arg,
-            robot_state_publisher_node,
-#            nesfr7_arm_launch,
-            nesfr7_arm_only_node,
+            nesfr7_arm_only_common_launch,
             nesfr_vr_launch,
         ])
     elif re.search("nesfr4$", hostname):
