@@ -170,13 +170,13 @@ def generate_launch_description():
     elif re.search("nesfr4$", hostname):
         return LaunchDescription([
             namespace_launch_arg,
-            nesfr4_node,
             nesfr_vr_launch,
+            TimerAction(period=1.0, actions=[nesfr4_node,]),
             RegisterEventHandler(
                 OnProcessExit(
                     target_action=nesfr4_node,
                     on_exit=[
-                        LogInfo(msg=(' closed nesfr4_node')),
+                        LogInfo(msg=('nesfr4_node closed')),
                         EmitEvent(event=Shutdown(reason='Window closed'))
                         ]
                     )
