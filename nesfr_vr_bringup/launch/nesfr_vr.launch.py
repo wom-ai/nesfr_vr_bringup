@@ -72,6 +72,12 @@ def generate_launch_description():
                 }.items()
             )
 
+    joy_switch_node = Node(
+        package='nesfr_vr_ros2',
+        namespace=namespace,
+        executable='nesfr_vr_joy_switch.py',
+        output='both')
+
 #    #
 #    # robot_state_publisher_node
 #    #
@@ -193,11 +199,13 @@ def generate_launch_description():
             namespace_launch_arg,
             nesfr7_arm_only_common_launch,
             nesfr_vr_launch,
+            joy_switch_node,
         ])
     elif re.search("nesfr4$", hostname):
         return LaunchDescription([
             namespace_launch_arg,
             nesfr_vr_launch,
+            joy_switch_node,
             TimerAction(period=1.0, actions=[nesfr4_node,]),
             RegisterEventHandler(
                 OnProcessExit(
