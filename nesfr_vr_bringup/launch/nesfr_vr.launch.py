@@ -44,9 +44,29 @@ def set_cyclonedds():
 
     print('[INFO] export CYCLONEDDS_URI=', os.environ['CYCLONEDDS_URI'])
 
+def get_configuration():
+    with open("/etc/nesfrvr/config/hw_config.json", "r") as json_hw_config_file:
+        json_hw_config_data = json.load(json_hw_config_file)
+
+    with open("/etc/nesfrvr/config/sw_config.json", "r") as json_sw_config_file:
+        json_sw_config_data = json.load(json_sw_config_file)
+    return json_hw_config_data, json_sw_config_data
+
+def set_cyclonedds(json_hw_config_data):
+    for iface in netifaces.interfaces():
+        ifaddresses = netifaces.ifaddresses(iface)
+        ret = ifaddresses.get(netifaces.AF_LINK, None)
+        if ret is not None and len(ret) > 0:
+            ret = ret[0].get('addr', None)
+            if ret is not None and ret == json_hw_config_data['network']['mac_addr']:
+                os.environ['CYCLONEDDS_URI'] = '<CycloneDDS><Domain><General><NetworkInterfaceAddress>{}</></></></>'.format(iface)
+                print("[INFO] interface_name={} mac_addr={}".format(iface, ret))
+
 def generate_launch_description():
 
-    set_cyclonedds()
+    json_hw_config_data, json_sw_config_data = get_configuration()
+
+    set_cyclonedds(json_hw_config_data)
 
     namespace = LaunchConfiguration('namespace')
 
@@ -181,54 +201,69 @@ def generate_launch_description():
             namespace=namespace,
             parameters=[nesfr4_params])
 
-    # nesfr7_XX
-    if re.search("nesfr7_[0-9]+$", hostname):
-        return LaunchDescription([
+    launch_list = [
             namespace_launch_arg,
             nesfr_vr_launch,
-        ])
-    elif re.search("nesfr7_one_[0-9]+$", hostname):
-        return LaunchDescription([
-            namespace_launch_arg,
-            nesfr7_arm_common_launch,
-            nesfr_vr_launch,
-        ])
+        ]
 
-    elif re.search("nesfr7_arm_[0-9]+$", hostname):
-        return LaunchDescription([
-            namespace_launch_arg,
-            nesfr7_arm_only_common_launch,
-            nesfr_vr_launch,
-            joy_switch_node,
-        ])
-    elif re.search("nesfr4$", hostname):
-        return LaunchDescription([
-            namespace_launch_arg,
-            nesfr_vr_launch,
-            joy_switch_node,
-            TimerAction(period=1.0, actions=[nesfr4_node,]),
-            RegisterEventHandler(
-                OnProcessExit(
-                    target_action=nesfr4_node,
-                    on_exit=[
-                        LogInfo(msg=('nesfr4_node closed')),
-                        EmitEvent(event=Shutdown(reason='Window closed'))
-                        ]
-                    )
-                ),
-        ])
-    else:
-        #
-        # references:
-        #  - https://github.com/ros2/launch/blob/foxy/launch/doc/source/architecture.rst#id49
-        #  - https://docs.ros.org/en/galactic/Tutorials/Intermediate/Launch/Using-Event-Handlers.html
-        #
-        return LaunchDescription([
-            RegisterEventHandler(
-                OnShutdown(
-                    on_shutdown=[LogInfo(
-                        msg=['This system({}) is unsupported by [nesfr7_vr_bringup]! Check your system or hostname'.format(hostname)]
-                    )]
-            )
-        ),
-        ])
+    if json_hw_config_data.get('base_robot'):
+        if json_hw_config_data['base_robot']['type'] == "NESFR7_ROS2":
+            pass
+        elif json_hw_config_data['base_robot']['type'] == "NESFR7_Arm_Only_ROS2":
+            launch_list.append(nesfr7_arm_only_common_launch)
+        elif json_hw_config_data['base_robot']['type'] == "NESFR4_ROS2":
+            launch_list.append(TimerAction(period=1.0, actions=[nesfr4_node,]))
+
+    return LaunchDescription(launch_list)
+
+#    # nesfr7_XX
+#    if re.search("nesfr7_[0-9]+$", hostname):
+#        return LaunchDescription([
+#            namespace_launch_arg,
+#            nesfr_vr_launch,
+#        ])
+#    elif re.search("nesfr7_one_[0-9]+$", hostname):
+#        return LaunchDescription([
+#            namespace_launch_arg,
+#            nesfr7_arm_common_launch,
+#            nesfr_vr_launch,
+#        ])
+#
+#    elif re.search("nesfr7_arm_[0-9]+$", hostname):
+#        return LaunchDescription([
+#            namespace_launch_arg,
+#            nesfr7_arm_only_common_launch,
+#            nesfr_vr_launch,
+#            joy_switch_node,
+#        ])
+#    elif re.search("nesfr4$", hostname):
+#        return LaunchDescription([
+#            namespace_launch_arg,
+#            nesfr_vr_launch,
+#            joy_switch_node,
+#            TimerAction(period=1.0, actions=[nesfr4_node,]),
+##            RegisterEventHandler(
+##                OnProcessExit(
+##                    target_action=nesfr4_node,
+##                    on_exit=[
+##                        LogInfo(msg=('nesfr4_node closed')),
+##                        EmitEvent(event=Shutdown(reason='Window closed'))
+##                        ]
+##                    )
+##                ),
+#        ])
+#    else:
+#        #
+#        # references:
+#        #  - https://github.com/ros2/launch/blob/foxy/launch/doc/source/architecture.rst#id49
+#        #  - https://docs.ros.org/en/galactic/Tutorials/Intermediate/Launch/Using-Event-Handlers.html
+#        #
+#        return LaunchDescription([
+#            RegisterEventHandler(
+#                OnShutdown(
+#                    on_shutdown=[LogInfo(
+#                        msg=['This system({}) is unsupported by [nesfr7_vr_bringup]! Check your system or hostname'.format(hostname)]
+#                    )]
+#            )
+#        ),
+#        ])
