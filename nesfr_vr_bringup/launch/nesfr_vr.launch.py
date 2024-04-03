@@ -22,6 +22,8 @@ from launch.event_handlers import (OnExecutionComplete, OnProcessExit,
 
 os.environ['RCUTILS_COLORIZED_OUTPUT'] = '1'
 
+import logging
+
 #
 # references
 #  - https://pypi.org/project/netifaces/
@@ -207,12 +209,28 @@ def generate_launch_description():
         ]
 
     if json_hw_config_data.get('base_robot'):
+        logging.info("base_robot is found on hw_config.json")
         if json_hw_config_data['base_robot']['type'] == "NESFR7_ROS2":
+            logging.info("NESFR7_ROS2 is found on hw_config.json")
             pass
         elif json_hw_config_data['base_robot']['type'] == "NESFR7_Arm_Only_ROS2":
+            logging.info("NESFR7_Arm_Only_ROS2 is found on hw_config.json")
             launch_list.append(nesfr7_arm_only_common_launch)
         elif json_hw_config_data['base_robot']['type'] == "NESFR4_ROS2":
+            logging.info("NESFR4_ROS2 is found on hw_config.json")
             launch_list.append(TimerAction(period=1.0, actions=[nesfr4_node,]))
+            launch_list.append( RegisterEventHandler(
+                                    OnProcessExit(
+                                        target_action=nesfr4_node,
+                                        on_exit=[
+                                            LogInfo(msg=('nesfr4_node closed')),
+                                            EmitEvent(event=Shutdown(reason='Window closed'))
+                                            ]
+                                        )
+                                    )
+                                )
+    else:
+        logging.info("base_robot is not found on hw_config.json")
 
     return LaunchDescription(launch_list)
 
