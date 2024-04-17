@@ -24,6 +24,8 @@ os.environ['RCUTILS_COLORIZED_OUTPUT'] = '1'
 
 import logging
 
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] [%(module)s]: %(message)s")
+
 #
 # references
 #  - https://pypi.org/project/netifaces/
@@ -33,7 +35,7 @@ def set_cyclonedds():
     # FIXME
     with open("/etc/nesfrvr/config/hw_config.json", "r") as json_file:
         json_data = json.load(json_file)
-        print(json_data['network']['mac_addr'])
+        logging.info(json_data['network']['mac_addr'])
 
     for iface in netifaces.interfaces():
         ifaddresses = netifaces.ifaddresses(iface)
@@ -42,16 +44,24 @@ def set_cyclonedds():
             ret = ret[0].get('addr', None)
             if ret is not None and ret == json_data['network']['mac_addr']:
                 os.environ['CYCLONEDDS_URI'] = '<CycloneDDS><Domain><General><NetworkInterfaceAddress>{}</></></></>'.format(iface)
-                print("[INFO] interface_name={} mac_addr={}".format(iface, ret))
+                logging.info("interface_name={} mac_addr={}".format(iface, ret))
 
-    print('[INFO] export CYCLONEDDS_URI=', os.environ['CYCLONEDDS_URI'])
+    logging.info('export CYCLONEDDS_URI=', os.environ['CYCLONEDDS_URI'])
 
 def get_configuration():
-    with open("/etc/nesfrvr/config/hw_config.json", "r") as json_hw_config_file:
-        json_hw_config_data = json.load(json_hw_config_file)
+    try:
+        with open("/etc/nesfrvr/config/hw_config.json", "r") as json_hw_config_file:
+            json_hw_config_data = json.load(json_hw_config_file)
+    except Exception as e:
+        logging.error('No hardware configuration file ({})'.format(e))
+        json_hw_config_data = None
+    try:
+        with open("/etc/nesfrvr/config/sw_config.json", "r") as json_sw_config_file:
+            json_sw_config_data = json.load(json_sw_config_file)
+    except Exception as e:
+        logging.error('No software configuration file ({})'.format(e))
+        json_sw_config_data = None
 
-    with open("/etc/nesfrvr/config/sw_config.json", "r") as json_sw_config_file:
-        json_sw_config_data = json.load(json_sw_config_file)
     return json_hw_config_data, json_sw_config_data
 
 def set_cyclonedds(json_hw_config_data):
@@ -62,13 +72,14 @@ def set_cyclonedds(json_hw_config_data):
             ret = ret[0].get('addr', None)
             if ret is not None and ret == json_hw_config_data['network']['mac_addr']:
                 os.environ['CYCLONEDDS_URI'] = '<CycloneDDS><Domain><General><NetworkInterfaceAddress>{}</></></></>'.format(iface)
-                print("[INFO] interface_name={} mac_addr={}".format(iface, ret))
+                logging.info("interface_name={} mac_addr={}".format(iface, ret))
 
 def generate_launch_description():
 
     json_hw_config_data, json_sw_config_data = get_configuration()
 
-    set_cyclonedds(json_hw_config_data)
+    if json_hw_config_data:
+        set_cyclonedds(json_hw_config_data)
 
     namespace = LaunchConfiguration('namespace')
 
@@ -99,72 +110,6 @@ def generate_launch_description():
         namespace=namespace,
         executable='nesfr_vr_joy_switch.py',
         output='both')
-
-#    #
-#    # robot_state_publisher_node
-#    #
-#    nesfr_arm_params = PathJoinSubstitution(
-#        [FindPackageShare("nesfr_arm_description"), "config", "nesfr7_arm.yaml"]
-#    )
-#
-#    robot_description_content = Command(
-#        [
-#            PathJoinSubstitution([FindExecutable(name="xacro")]),
-#            " ",
-#            PathJoinSubstitution([FindPackageShare("nesfr_arm_description"), "urdf", "nesfr_arm.urdf.xacro"]),
-#            " ",
-#            "nesfr_arm_params:=",
-#            nesfr_arm_params,
-#            " ",
-#            "prefix:=",
-#            hostname + '/',
-#            " ",
-#        ]
-#    )
-#    robot_description = {"robot_description": robot_description_content}
-#    robot_state_publisher_node = Node(
-#        package="robot_state_publisher",
-#        executable="robot_state_publisher",
-#        namespace=namespace,
-#        output="both",
-#        parameters=[robot_description],
-#    )
-#
-#    #
-#    # nesfr_arm_node
-#    #
-#    robot_config_file = LaunchConfiguration('robot_config_file', default=[namespace, '.yaml'])
-#    nesfr7_arm_params = PathJoinSubstitution(
-#            [FindPackageShare("nesfr_arm_bringup"), "config", robot_config_file]
-#            )
-#
-#    #
-#    # references
-#    #  - https://answers.ros.org/question/311471/selecting-log-level-in-ros2-launch-file/
-#    #  - https://docs.ros.org/en/humble/Tutorials/Demos/Logging-and-logger-configuration.html
-#    #
-#    nesfr7_arm_only_node = Node(
-#        package='nesfr_arm_only_node_py',
-#        executable='nesfr_arm_only_node',
-#        namespace=namespace,
-#        name='nesfr7_arm_only_node',
-#        parameters=[nesfr7_arm_params],
-#        #parameters=[{"param0": 1, "param1": 2}],
-#        arguments=['--ros-args', '--log-level', [namespace, '.nesfr7_arm_only_node:=info'],],
-#        output='both',
-#    )
-#
-#    nesfr7_arm_launch = IncludeLaunchDescription(
-#            PythonLaunchDescriptionSource([
-#                PathJoinSubstitution([
-#                    FindPackageShare('nesfr_arm_bringup'), 'launch',
-#                    'nesfr7_arm_common.launch.py'
-#                    ])
-#                ]),
-#            launch_arguments={
-#                'namespace': namespace
-#                }.items()
-#            )
 
     nesfr7_arm_common_launch = IncludeLaunchDescription(
             PythonLaunchDescriptionSource([
@@ -208,80 +153,88 @@ def generate_launch_description():
             nesfr_vr_launch,
         ]
 
-    if json_hw_config_data.get('base_robot'):
-        logging.info("base_robot is found on hw_config.json")
-        if json_hw_config_data['base_robot']['type'] == "NESFR7_ROS2":
-            logging.info("NESFR7_ROS2 is found on hw_config.json")
-            pass
-        elif json_hw_config_data['base_robot']['type'] == "NESFR7_Arm_Only_ROS2":
-            logging.info("NESFR7_Arm_Only_ROS2 is found on hw_config.json")
-            launch_list.append(nesfr7_arm_only_common_launch)
-        elif json_hw_config_data['base_robot']['type'] == "NESFR4_ROS2":
-            logging.info("NESFR4_ROS2 is found on hw_config.json")
-            launch_list.append(TimerAction(period=1.0, actions=[nesfr4_node,]))
-            launch_list.append( RegisterEventHandler(
-                                    OnProcessExit(
-                                        target_action=nesfr4_node,
-                                        on_exit=[
-                                            LogInfo(msg=('nesfr4_node closed')),
-                                            EmitEvent(event=Shutdown(reason='Window closed'))
-                                            ]
+    if json_hw_config_data:
+        if json_hw_config_data.get('base_robot'):
+            logging.info("base_robot is found on hw_config.json")
+            if json_hw_config_data['base_robot']['type'] == "NESFR7_ROS2":
+                logging.info("NESFR7_ROS2 is found on hw_config.json")
+                pass
+            elif json_hw_config_data['base_robot']['type'] == "NESFR7_Arm_Only_ROS2":
+                logging.info("NESFR7_Arm_Only_ROS2 is found on hw_config.json")
+                launch_list.append(nesfr7_arm_only_common_launch)
+            elif json_hw_config_data['base_robot']['type'] == "NESFR4_ROS2":
+                logging.info("NESFR4_ROS2 is found on hw_config.json")
+                launch_list.append(TimerAction(period=1.0, actions=[nesfr4_node,]))
+                launch_list.append( RegisterEventHandler(
+                                        OnProcessExit(
+                                            target_action=nesfr4_node,
+                                            on_exit=[
+                                                LogInfo(msg=('nesfr4_node closed')),
+                                                EmitEvent(event=Shutdown(reason='Window closed'))
+                                                ]
+                                            )
                                         )
                                     )
-                                )
-    else:
-        logging.info("base_robot is not found on hw_config.json")
+        else:
+            logging.info("base_robot is not found on hw_config.json")
 
-    return LaunchDescription(launch_list)
+        return LaunchDescription(launch_list)
 
-#    # nesfr7_XX
-#    if re.search("nesfr7_[0-9]+$", hostname):
-#        return LaunchDescription([
-#            namespace_launch_arg,
-#            nesfr_vr_launch,
-#        ])
-#    elif re.search("nesfr7_one_[0-9]+$", hostname):
-#        return LaunchDescription([
-#            namespace_launch_arg,
-#            nesfr7_arm_common_launch,
-#            nesfr_vr_launch,
-#        ])
-#
-#    elif re.search("nesfr7_arm_[0-9]+$", hostname):
-#        return LaunchDescription([
-#            namespace_launch_arg,
-#            nesfr7_arm_only_common_launch,
-#            nesfr_vr_launch,
-#            joy_switch_node,
-#        ])
-#    elif re.search("nesfr4$", hostname):
-#        return LaunchDescription([
-#            namespace_launch_arg,
-#            nesfr_vr_launch,
-#            joy_switch_node,
-#            TimerAction(period=1.0, actions=[nesfr4_node,]),
-##            RegisterEventHandler(
-##                OnProcessExit(
-##                    target_action=nesfr4_node,
-##                    on_exit=[
-##                        LogInfo(msg=('nesfr4_node closed')),
-##                        EmitEvent(event=Shutdown(reason='Window closed'))
-##                        ]
-##                    )
-##                ),
-#        ])
-#    else:
-#        #
-#        # references:
-#        #  - https://github.com/ros2/launch/blob/foxy/launch/doc/source/architecture.rst#id49
-#        #  - https://docs.ros.org/en/galactic/Tutorials/Intermediate/Launch/Using-Event-Handlers.html
-#        #
-#        return LaunchDescription([
+    #
+    # default setup
+    #
+    logging.warn('Launch with Default Configuration')
+
+    # nesfr7_XX
+    if re.search("nesfr7_[0-9]+$", hostname):
+        return LaunchDescription([
+            namespace_launch_arg,
+            nesfr_vr_launch,
+        ])
+    # nesfr7_one_XX
+    elif re.search("nesfr7_one_[0-9]+$", hostname):
+        return LaunchDescription([
+            namespace_launch_arg,
+            nesfr7_arm_common_launch,
+            nesfr_vr_launch,
+        ])
+    # nesfr7_arm_XX
+    elif re.search("nesfr7_arm_[0-9]+$", hostname):
+        return LaunchDescription([
+            namespace_launch_arg,
+            nesfr7_arm_only_common_launch,
+            nesfr_vr_launch,
+            joy_switch_node,
+        ])
+    # nesfr4_XX
+    elif re.search("nesfr4$", hostname):
+        return LaunchDescription([
+            namespace_launch_arg,
+            nesfr_vr_launch,
+            joy_switch_node,
+            TimerAction(period=1.0, actions=[nesfr4_node,]),
 #            RegisterEventHandler(
-#                OnShutdown(
-#                    on_shutdown=[LogInfo(
-#                        msg=['This system({}) is unsupported by [nesfr7_vr_bringup]! Check your system or hostname'.format(hostname)]
-#                    )]
-#            )
-#        ),
-#        ])
+#                OnProcessExit(
+#                    target_action=nesfr4_node,
+#                    on_exit=[
+#                        LogInfo(msg=('nesfr4_node closed')),
+#                        EmitEvent(event=Shutdown(reason='Window closed'))
+#                        ]
+#                    )
+#                ),
+        ])
+    else:
+        #
+        # references:
+        #  - https://github.com/ros2/launch/blob/foxy/launch/doc/source/architecture.rst#id49
+        #  - https://docs.ros.org/en/galactic/Tutorials/Intermediate/Launch/Using-Event-Handlers.html
+        #
+        return LaunchDescription([
+            RegisterEventHandler(
+                OnShutdown(
+                    on_shutdown=[LogInfo(
+                        msg=['This system({}) is unsupported by [nesfr7_vr_bringup]! Check your system or hostname'.format(hostname)]
+                    )]
+                )
+            ),
+            ])
