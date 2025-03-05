@@ -22,12 +22,38 @@ from launch.event_handlers import (OnExecutionComplete, OnProcessExit,
 
 os.environ['RCUTILS_COLORIZED_OUTPUT'] = '1'
 
+FASTRTPS_DEFAULT_PROFILES_FILE_PATH='/work/fastdds.xml'
+os.environ['FASTRTPS_DEFAULT_PROFILES_FILE'] = FASTRTPS_DEFAULT_PROFILES_FILE_PATH
+
 import logging
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] [%(module)s]: %(message)s")
 
+BASE_FASTDDS_CONFIG_XML_TEXT="""<?xml version="1.0" encoding="UTF-8" ?>
+<profiles xmlns="http://www.eprosima.com">
+    <transport_descriptors>
+        <transport_descriptor>
+            <transport_id>CustomTcpTransportWhitelistAddress</transport_id>
+            <type>UDPv4</type>
+            <interfaceWhiteList>
+                {}
+            </interfaceWhiteList>
+        </transport_descriptor>
+    </transport_descriptors>
+    <participant profile_name="CustomTcpTransportWhitelistAddressParticipant" is_default_profile="true">
+        <rtps>
+            <useBuiltinTransports>false</useBuiltinTransports>
+            <userTransports>
+                <transport_id>CustomTcpTransportWhitelistAddress</transport_id>
+            </userTransports>
+        </rtps>
+    </participant>
+</profiles>
+"""
+
 #
 # references
+#  - https://iroboteducation.github.io/create3_docs/setup/xml-config/
 #  - https://pypi.org/project/netifaces/
 #  - https://github.com/eclipse-cyclonedds/cyclonedds
 #
@@ -65,21 +91,75 @@ def get_configuration():
     return json_hw_config_data, json_sw_config_data
 
 def set_cyclonedds(json_hw_config_data):
+    ifaces = []
     for iface in netifaces.interfaces():
         ifaddresses = netifaces.ifaddresses(iface)
         ret = ifaddresses.get(netifaces.AF_LINK, None)
         if ret is not None and len(ret) > 0:
             ret = ret[0].get('addr', None)
-            if ret is not None and ret == json_hw_config_data['network']['mac_addr']:
-                os.environ['CYCLONEDDS_URI'] = '<CycloneDDS><Domain><General><NetworkInterfaceAddress>{}</></></></>'.format(iface)
-                logging.info("interface_name={} mac_addr={}".format(iface, ret))
+            if ret is not None and ret in json_hw_config_data['ros_network']['mac_addr']:
+#                os.environ['CYCLONEDDS_URI'] = '<CycloneDDS><Domain><General><NetworkInterfaceAddress>{}</></></></>'.format(iface)
+                ifaces.append(iface)
+                logging.info("[ros_network] interface_name={} mac_addr={}".format(iface, ret))
+
+    os.environ['CYCLONEDDS_URI'] = '<CycloneDDS><Domain><General><NetworkInterfaceAddress>{}</NetworkInterfaceAddress></General></Domain></CycloneDDS>'.format(",".join(ifaces))
+#    os.environ['CYCLONEDDS_URI'] = '<CycloneDDS><Domain><General><NetworkInterfaceAddress>wlan0</NetworkInterfaceAddress></General></Domain></CycloneDDS>'
+    logging.info("{}".format(os.environ['CYCLONEDDS_URI']))
+
+#
+#  references
+#  - chatGPT
+#  - https://robotics.stackexchange.com/questions/102329/limit-ros-traffic-to-specific-network-interface
+#  - https://fast-dds.docs.eprosima.com/en/latest/fastdds/transport/whitelist.html
+#
+def set_fastdds(json_hw_config_data):
+    logging.info('Set FastDDS Configuration')
+    if json_hw_config_data.get('ros_network') is None:
+        logging.info("[ros_network] No ROS network setup found in configuration.")
+        return True
+
+    if json_hw_config_data['ros_network'].get('mac_addr') is None:
+        logging.info("[ros_network] No MAC addresses found in ROS network configuration.")
+        return True
+
+    ip_addrs = []
+    for iface in netifaces.interfaces():
+        ifaddresses = netifaces.ifaddresses(iface)
+        link = ifaddresses.get(netifaces.AF_LINK, None)
+        inet = ifaddresses.get(netifaces.AF_INET, None)
+        if link and inet:
+            mac_addr = link[0].get('addr', None)
+            ip = inet[0].get('addr', None)
+            if mac_addr is not None and mac_addr in json_hw_config_data['ros_network']['mac_addr']:
+                ip_addrs.append(ip)
+                logging.info("[ros_network] interface_name={} mac_addr={} ip={}".format(iface, mac_addr, ip))
+
+    if len(ip_addrs) == 0:
+        logging.info("[ros_network] No network interface found {}.")
+        return True
+
+    ip_settings = "\t".join(f"<address>{ip}</address>" for ip in ip_addrs)
+    xml_text = BASE_FASTDDS_CONFIG_XML_TEXT.format(ip_settings)
+
+    logging.info("fastdds.xml\n {}".format(xml_text))
+    # write fastdds.xml on /work/fastdds.xml
+    try:
+        with open(FASTRTPS_DEFAULT_PROFILES_FILE_PATH, "w") as fastdds_profile_file:
+            fastdds_profile_file.write(xml_text)
+    except Exception as e:
+        logging.error("failed to write FASTRTPS_DEFAULT_PROFILES_FILE: {}".format(e))
+        return False
+
+    return True
 
 def generate_launch_description():
 
     json_hw_config_data, json_sw_config_data = get_configuration()
 
     if json_hw_config_data:
-        set_cyclonedds(json_hw_config_data)
+        # set_cyclonedds(json_hw_config_data)
+        if set_fastdds(json_hw_config_data) == False:
+            return
 
     namespace = LaunchConfiguration('namespace')
 
